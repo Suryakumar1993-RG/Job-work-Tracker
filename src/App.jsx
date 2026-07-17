@@ -50,6 +50,14 @@ function RoleRoute({ id, children }) {
   return children;
 }
 
+function HomeRedirect() {
+  const { currentUser } = useAuth();
+  if (currentUser?.role === 'job_worker') {
+    return <Navigate to="/app/acceptance" replace />;
+  }
+  return <Navigate to="/app/dashboard" replace />;
+}
+
 function App() {
   return (
     <DataProvider>
@@ -59,7 +67,7 @@ function App() {
             <Router>
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+                <Route path="/" element={<HomeRedirect />} />
                 <Route path="/app" element={
                   <ProtectedRoute>
                     <Layout />

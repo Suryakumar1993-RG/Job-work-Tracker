@@ -6,7 +6,7 @@ import { useData } from './DataContext';
 const AuthContext = createContext(null);
 
 const ALL_MENUS = [
-  { id: "dashboard", label: "Dashboard", icon: "📊", roles: ["admin","store_manager","store_operator","job_worker","viewer"], group: "Main" },
+  { id: "dashboard", label: "Dashboard", icon: "📊", roles: ["admin","store_manager","store_operator","viewer"], group: "Main" },
   { id: "users", label: "User Management", icon: "👤", roles: ["admin"], group: "Master" },
   { id: "products", label: "Product Master", icon: "📦", roles: ["admin","store_manager","store_operator","viewer"], group: "Master" },
   { id: "jobworkers", label: "Job Worker Master", icon: "🏭", roles: ["admin","store_manager","store_operator","viewer"], group: "Master" },

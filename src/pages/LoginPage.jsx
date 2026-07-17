@@ -16,7 +16,13 @@ export default function LoginPage() {
     const result = login(username.trim(), password);
     if (result.success) {
       showToast("Login Successful! Redirecting...", "success");
-      setTimeout(() => navigate('/app/dashboard'), 500);
+      setTimeout(() => {
+        if (result.user.role === "job_worker") {
+          navigate('/app/acceptance');
+        } else {
+          navigate('/app/dashboard');
+        }
+      }, 500);
     } else {
       showToast(result.message, "error");
     }
