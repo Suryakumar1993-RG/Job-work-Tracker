@@ -24,13 +24,22 @@ export default function ProductionPage() {
           const pending = mat.qtySent - mat.qtyReturned;
           const matchesVendor = currentUser.role !== "job_worker" || dn.jobWorkerId === currentUser.linkedJobWorkerId;
           
-          if (pending > 0 && matchesVendor && mat.currentProductionStage) {
-            items.push({
-              dnId: dn.id,
-              dnNumber: dn.dnNumber,
-              jobWorkerName: dn.jobWorkerName,
-              jobWorkerId: dn.jobWorkerId,
-              material: mat
+          if (pending > 0 && matchesVendor) {
+            const wip = mat.wipQuantities || { [mat.currentProductionStage || "queued"]: pending };
+            
+            Object.keys(wip).forEach(stageId => {
+              if (wip[stageId] > 0) {
+                items.push({
+                  id: `${mat.id}-${stageId}`,
+                  dnId: dn.id,
+                  dnNumber: dn.dnNumber,
+                  jobWorkerName: dn.jobWorkerName,
+                  jobWorkerId: dn.jobWorkerId,
+                  material: mat,
+                  stageId: stageId,
+                  stageQty: wip[stageId]
+                });
+              }
             });
           }
         });
@@ -54,7 +63,7 @@ export default function ProductionPage() {
     { id: "ready_for_dispatch", label: "Ready for Dispatch", color: "#34d399" }
   ];
 
-  const handleCardClick = (dnId, matId) => {
+  const handleCardClick = (dnId, matId, sourceStageId, currentStageQty) => {
     const dn = db.deliveryNotes.getById(dnId);
     if (!dn) return;
     const mat = dn.materials.find(m => m.id === matId);
@@ -68,13 +77,16 @@ export default function ProductionPage() {
 
     const FormContent = () => {
       const [formData, setFormData] = useState({
-        stage: mat.currentProductionStage,
-        qty: mat.qtySent - mat.qtyReturned,
+        targetStage: '',
+        qtyProcessed: currentStageQty,
+        qtyRejected: 0,
         date: new Date().toISOString().split("T")[0],
         batch: `BATCH-${dn.dnNumber.split('/').pop()}`,
         remarks: "",
-        estDate: mat.estimatedReturnDate
+        estDate: mat.estimatedReturnDate || ''
       });
+
+      const qtyPending = currentStageQty - formData.qtyProcessed - formData.qtyRejected;
 
       const handleSubmit = (e) => {
         e.preventDefault();
@@ -82,19 +94,43 @@ export default function ProductionPage() {
         const materialObj = targetDn.materials.find(mo => mo.id === matId);
         
         if (materialObj) {
-          const qtyVal = parseFloat(formData.qty);
-          if (formData.stage === "ready_for_dispatch") {
-            materialObj.qtyCompleted = qtyVal;
-          } else {
-            materialObj.qtyInProcess = qtyVal;
+          const procQty = parseFloat(formData.qtyProcessed) || 0;
+          const rejQty = parseFloat(formData.qtyRejected) || 0;
+          
+          if (qtyPending < 0) {
+            showToast("Total processed + rejected cannot exceed available stage quantity", "error");
+            return;
           }
-          materialObj.currentProductionStage = formData.stage;
+
+          if (!materialObj.wipQuantities) {
+            materialObj.wipQuantities = { [sourceStageId]: currentStageQty };
+          }
+          
+          // Deduct from source stage
+          materialObj.wipQuantities[sourceStageId] -= (procQty + rejQty);
+          
+          // Add to target stage (Processed)
+          if (procQty > 0 && formData.targetStage) {
+            materialObj.wipQuantities[formData.targetStage] = (materialObj.wipQuantities[formData.targetStage] || 0) + procQty;
+            materialObj.currentProductionStage = formData.targetStage; // Update "latest" stage pointer
+            
+            if (formData.targetStage === "ready_for_dispatch") {
+              materialObj.qtyCompleted = (materialObj.qtyCompleted || 0) + procQty;
+            }
+          }
+
+          // Add to rework stage (Rejected)
+          if (rejQty > 0) {
+            materialObj.wipQuantities["rework"] = (materialObj.wipQuantities["rework"] || 0) + rejQty;
+          }
+
           materialObj.estimatedReturnDate = formData.estDate;
 
           materialObj.productionHistory.push({
-            stage: formData.stage,
+            stage: formData.targetStage || sourceStageId,
             date: formData.date,
-            qtyProcessed: qtyVal,
+            qtyProcessed: procQty,
+            qtyRejected: rejQty,
             batchNumber: formData.batch || null,
             qualityRemarks: formData.remarks,
             expectedCompletionDate: formData.estDate || null,
@@ -112,27 +148,38 @@ export default function ProductionPage() {
         <div className="grid-2">
           <form onSubmit={handleSubmit}>
             <div className="form-group">
-              <label>Material Details</label>
+              <label>Material Details (Stage: {stages.find(s=>s.id===sourceStageId)?.label})</label>
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', padding: '12px', borderRadius: '6px', fontSize: '0.9rem', lineHeight: '1.5' }}>
                 <div>Challan No: <strong>{dn.dnNumber}</strong></div>
-                <div>Job Worker: <strong>{dn.jobWorkerName}</strong></div>
                 <div>Material: <strong>{mat.description}</strong></div>
-                <div>Challan Qty: <strong>{mat.qtySent} {mat.unit}</strong></div>
-                <div>Returned Qty: <strong>{mat.qtyReturned} {mat.unit}</strong></div>
+                <div>Qty Available in this Stage: <strong>{currentStageQty} {mat.unit}</strong></div>
               </div>
             </div>
 
             <div className="form-row">
               <div className="form-group">
-                <label>Target Production Stage *</label>
-                <select className="form-control" value={formData.stage} onChange={e => setFormData({...formData, stage: e.target.value})} required>
-                  {stages.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                <label>Move To Stage</label>
+                <select className="form-control" value={formData.targetStage} onChange={e => setFormData({...formData, targetStage: e.target.value})} required={formData.qtyProcessed > 0}>
+                  <option value="">-- Select Target Stage --</option>
+                  {stages.filter(s => s.id !== "rework" && s.id !== sourceStageId).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                 </select>
               </div>
+            </div>
+
+            <div className="form-row">
               <div className="form-group">
-                <label>Qty at Stage *</label>
-                <input type="number" className="form-control" value={formData.qty} onChange={e => setFormData({...formData, qty: e.target.value})} min="1" max={mat.qtySent - mat.qtyReturned} required />
+                <label style={{ color: 'var(--success)' }}>Processed Qty *</label>
+                <input type="number" className="form-control" value={formData.qtyProcessed} onChange={e => setFormData({...formData, qtyProcessed: parseFloat(e.target.value) || 0})} min="0" max={currentStageQty} required />
               </div>
+              <div className="form-group">
+                <label style={{ color: 'var(--danger)' }}>Rejected Qty (to Rework)</label>
+                <input type="number" className="form-control" value={formData.qtyRejected} onChange={e => setFormData({...formData, qtyRejected: parseFloat(e.target.value) || 0})} min="0" max={currentStageQty} required />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label style={{ color: 'var(--text-secondary)' }}>Pending in Current Stage</label>
+              <input type="number" className="form-control" value={qtyPending} disabled style={{ background: 'rgba(0,0,0,0.05)', color: qtyPending < 0 ? 'var(--danger)' : 'inherit' }} />
             </div>
 
             <div className="form-row">
@@ -158,7 +205,7 @@ export default function ProductionPage() {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid var(--border-glass)', paddingTop: '18px' }}>
               <button type="button" className="btn btn-secondary" onClick={closeModal}>Close</button>
-              <button type="submit" className="btn btn-primary">💾 Update Production Stage</button>
+              <button type="submit" className="btn btn-primary" disabled={qtyPending < 0}>💾 Update Production Stage</button>
             </div>
           </form>
 
@@ -176,7 +223,8 @@ export default function ProductionPage() {
                         <span>{formatDate(h.date)}</span>
                       </div>
                       <div className="timeline-event-content">
-                        Quantity: <strong>{h.qtyProcessed}</strong> units.<br />
+                        Processed: <strong>{h.qtyProcessed || 0}</strong> | 
+                        Rejected: <strong style={{ color: h.qtyRejected > 0 ? 'var(--danger)' : 'inherit' }}>{h.qtyRejected || 0}</strong><br />
                         Remarks: <i>"{h.qualityRemarks || 'None'}"</i><br />
                         <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
                           Batch: {h.batchNumber || 'N/A'} | Updated: {new Date(h.updatedAt).toLocaleTimeString()}
@@ -223,7 +271,7 @@ export default function ProductionPage() {
 
       <div className="kanban-board">
         {stages.map(stage => {
-          const stageItems = filteredItems.filter(item => item.material.currentProductionStage === stage.id);
+          const stageItems = filteredItems.filter(item => item.stageId === stage.id);
           
           return (
             <div key={stage.id} className="kanban-col">
@@ -250,15 +298,19 @@ export default function ProductionPage() {
 
                   return (
                     <div 
-                      key={item.material.id} 
+                      key={item.id} 
                       className="card glass kanban-card" 
                       style={borderStyle}
-                      onClick={() => handleCardClick(item.dnId, item.material.id)}
+                      onClick={() => handleCardClick(item.dnId, item.material.id, item.stageId, item.stageQty)}
                     >
                       <div className="kanban-card-dn">{item.dnNumber}</div>
                       <div className="kanban-card-title">{item.material.description}</div>
                       
-                      <div className="kanban-card-progress" title={`Progress: ${percent}%`}>
+                      <div style={{ marginTop: '8px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Qty: {item.stageQty} {item.material.unit}
+                      </div>
+
+                      <div className="kanban-card-progress" style={{ marginTop: '8px' }} title={`Completed: ${percent}%`}>
                         <div className="kanban-card-progress-bar" style={{ width: `${percent}%`, background: stage.color }}></div>
                       </div>
                       

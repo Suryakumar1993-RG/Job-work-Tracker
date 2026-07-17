@@ -80,6 +80,7 @@ export default function AcceptancePage() {
           
           mat.qtyInProcess = matState.recQty; 
           mat.currentProductionStage = "queued";
+          mat.wipQuantities = { queued: matState.recQty };
           mat.currentStatus = "at_jobworker";
 
           mat.statusHistory.push({

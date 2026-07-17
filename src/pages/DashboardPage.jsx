@@ -62,7 +62,7 @@ export default function DashboardPage() {
         logs.push({ date: new Date(hist.date), text: <span>Challan <strong>{dn.dnNumber}</strong>: '{mat.description}' status changed to <strong>{hist.status.replace("_", " ")}</strong> ({hist.remarks})</span> });
       });
       mat.productionHistory.forEach(prod => {
-        logs.push({ date: new Date(prod.date), text: <span>Production update for <strong>{dn.dnNumber}</strong>: Stage <strong>{prod.stage.replace("_", " ")}</strong> - {prod.qtyProcessed} units ({prod.qualityRemarks || "No remarks"})</span> });
+        logs.push({ date: new Date(prod.date), text: <span>Production update for <strong>{dn.dnNumber}</strong>: Stage <strong>{prod.stage.replace("_", " ")}</strong> - Processed: {prod.qtyProcessed || 0}, Rejected: {prod.qtyRejected || 0} ({prod.qualityRemarks || "No remarks"})</span> });
       });
     });
   });
