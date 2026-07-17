@@ -24,6 +24,32 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function RoleRoute({ id, children }) {
+  const { checkAccess, getAllMenus, currentUser } = useAuth();
+  
+  // Find the menu to get its required roles
+  const menus = getAllMenus();
+  const menu = menus.find(m => m.id === id);
+  
+  if (!menu) {
+    // If not a standard menu, let it pass or handle custom (like dashboard)
+    return children;
+  }
+
+  if (!checkAccess(menu.roles)) {
+    return (
+      <div className="card glass text-center" style={{ padding: '40px', margin: '20px' }}>
+        <h3 style={{ color: 'var(--danger)' }}>🚨 Access Denied</h3>
+        <p style={{ color: 'var(--text-secondary)', marginTop: '10px' }}>
+          Your current role ({currentUser.role}) does not have permission to view this page.
+        </p>
+      </div>
+    );
+  }
+  
+  return children;
+}
+
 function App() {
   return (
     <DataProvider>
@@ -39,18 +65,18 @@ function App() {
                     <Layout />
                   </ProtectedRoute>
                 }>
-                  <Route path="dashboard" element={<DashboardPage />} />
-                  <Route path="products" element={<ProductsPage />} />
-                  <Route path="jobworkers" element={<JobWorkersPage />} />
-                  <Route path="transporters" element={<TransportersPage />} />
-                  <Route path="users" element={<UsersPage />} />
+                  <Route path="dashboard" element={<RoleRoute id="dashboard"><DashboardPage /></RoleRoute>} />
+                  <Route path="products" element={<RoleRoute id="products"><ProductsPage /></RoleRoute>} />
+                  <Route path="jobworkers" element={<RoleRoute id="jobworkers"><JobWorkersPage /></RoleRoute>} />
+                  <Route path="transporters" element={<RoleRoute id="transporters"><TransportersPage /></RoleRoute>} />
+                  <Route path="users" element={<RoleRoute id="users"><UsersPage /></RoleRoute>} />
                   
                   {/* Transaction routes */}
-                  <Route path="deliverynotes" element={<DeliveryNotePage />} />
-                  <Route path="production" element={<ProductionPage />} />
-                  <Route path="grn" element={<GRNPage />} />
-                  <Route path="acceptance" element={<AcceptancePage />} />
-                  <Route path="aging" element={<AgingPage />} />
+                  <Route path="deliverynotes" element={<RoleRoute id="deliverynotes"><DeliveryNotePage /></RoleRoute>} />
+                  <Route path="production" element={<RoleRoute id="production"><ProductionPage /></RoleRoute>} />
+                  <Route path="grn" element={<RoleRoute id="grn"><GRNPage /></RoleRoute>} />
+                  <Route path="acceptance" element={<RoleRoute id="acceptance"><AcceptancePage /></RoleRoute>} />
+                  <Route path="aging" element={<RoleRoute id="aging"><AgingPage /></RoleRoute>} />
                 </Route>
                 <Route path="*" element={<Navigate to="/login" replace />} />
               </Routes>

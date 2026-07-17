@@ -9,17 +9,15 @@ export default function DashboardPage() {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
-  const dns = db.deliveryNotes.getAll();
+  let dns = db.deliveryNotes.getAll();
+  if (currentUser.role === "job_worker") {
+    dns = dns.filter(d => d.jobWorkerId === currentUser.linkedJobWorkerId);
+  }
   const activeDns = dns.filter(d => ["in_transit", "at_jobworker", "in_production", "partial_return"].includes(d.status));
   const inTransit = dns.filter(d => d.status === "in_transit");
   const atJobWorker = dns.filter(d => ["at_jobworker", "in_production"].includes(d.status));
 
-  let pendingAcceptanceCount = 0;
-  if (currentUser.role === "job_worker") {
-    pendingAcceptanceCount = dns.filter(d => d.jobWorkerId === currentUser.linkedJobWorkerId && d.status === "in_transit").length;
-  } else {
-    pendingAcceptanceCount = dns.filter(d => d.status === "in_transit").length;
-  }
+  const pendingAcceptanceCount = inTransit.length;
 
   let overdueCount = 0, refreshDueCount = 0;
   const refreshAlerts = [];
